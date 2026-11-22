@@ -146,28 +146,31 @@ final class Tracker {
     // ---------- Run (keep in sync with scripts/scrape.mjs) ----------
     private static final String HTML = "text/html,application/xhtml+xml,*/*;q=0.8", JSON = "application/json, text/plain, */*";
 
+    private static Context appContext; // set by run(); the Chromium engine needs it
+
     /** Same headers a browser sends from the product page; idealo answers 404/403 without the referer. */
     private static String fetch(String url, String referer, String accept, int tries) throws IOException {
+        Map<String, String> h = new LinkedHashMap<>();
+        h.put("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36");
+        h.put("Accept", accept);
+        h.put("Accept-Language", "fr-FR,fr;q=0.9");
+        if (referer != null) {
+            h.put("Referer", referer);
+            h.put("Sec-Fetch-Site", "same-origin");
+            h.put("Sec-Fetch-Mode", "cors");
+            h.put("Sec-Fetch-Dest", "empty");
+        }
         IOException last = null;
         for (int attempt = 1; attempt <= tries; attempt++) {
             try {
-                HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
-                c.setConnectTimeout(30000); c.setReadTimeout(30000);
-                c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36");
-                c.setRequestProperty("Accept-Language", "fr-FR,fr;q=0.9");
-                c.setRequestProperty("Accept", accept);
-                if (referer != null) {
-                    c.setRequestProperty("Referer", referer);
-                    c.setRequestProperty("Sec-Fetch-Site", "same-origin");
-                    c.setRequestProperty("Sec-Fetch-Mode", "cors");
-                    c.setRequestProperty("Sec-Fetch-Dest", "empty");
-                }
-                try {
-                    int code = c.getResponseCode();
-                    if (code == 403) throw new IOException("idealo a refusé la requête (HTTP 403)");
-                    if (code != 200) throw new IOException("HTTP " + code);
-                    try (InputStream in = c.getInputStream()) { return readAll(in); }
-                } finally { c.disconnect(); }
+                // idealo turns away clients that don't look like a browser (403 to Java's HTTP client, 200 to browsers):
+                // Android 14+ ships Chrome's network stack, so use it there.
+                String[] res = android.os.Build.VERSION.SDK_INT >= 34 && appContext != null
+                    ? Chromium.get(appContext, url, h) : plainGet(url, h);
+                int code = Integer.parseInt(res[0]);
+                if (code == 403) throw new IOException("idealo a refusé la requête (HTTP 403)");
+                if (code != 200) throw new IOException("HTTP " + code);
+                return res[1];
             } catch (java.net.UnknownHostException e) {
                 last = new IOException("Pas de connexion internet pendant la vérification");
             } catch (IOException e) {
@@ -176,6 +179,78 @@ final class Tracker {
             if (attempt < tries) sleep(5000L * attempt);
         }
         throw last;
+    }
+
+    /** {status, body} with the platform's basic HTTP client (Android 13 and older, and unit tests). */
+    private static String[] plainGet(String url, Map<String, String> headers) throws IOException {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        c.setConnectTimeout(30000); c.setReadTimeout(30000);
+        for (Map.Entry<String, String> e : headers.entrySet()) c.setRequestProperty(e.getKey(), e.getValue());
+        try {
+            int code = c.getResponseCode();
+            if (code != 200) return new String[] { String.valueOf(code), "" };
+            try (InputStream in = c.getInputStream()) { return new String[] { "200", readAll(in) }; }
+        } finally { c.disconnect(); }
+    }
+
+    /** {status, body} through android.net.http.HttpEngine: Chrome's network stack, built into Android 14+. */
+    @android.annotation.TargetApi(34)
+    private static final class Chromium {
+        private static android.net.http.HttpEngine engine;
+        private static final java.util.concurrent.Executor IO = java.util.concurrent.Executors.newSingleThreadExecutor();
+
+        private static synchronized android.net.http.HttpEngine engine(Context c) {
+            if (engine == null) engine = new android.net.http.HttpEngine.Builder(c)
+                .setEnableHttp2(true).setEnableQuic(true).setEnableBrotli(true).build();
+            return engine;
+        }
+
+        static String[] get(Context c, String url, Map<String, String> headers) throws IOException {
+            ByteArrayOutputStream body = new ByteArrayOutputStream();
+            int[] code = { 0 };
+            IOException[] err = { null };
+            java.util.concurrent.CountDownLatch done = new java.util.concurrent.CountDownLatch(1);
+            android.net.http.UrlRequest.Callback cb = new android.net.http.UrlRequest.Callback() {
+                @Override public void onRedirectReceived(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i, String next) { r.followRedirect(); }
+                @Override public void onResponseStarted(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i) {
+                    code[0] = i.getHttpStatusCode();
+                    r.read(java.nio.ByteBuffer.allocateDirect(64 * 1024));
+                }
+                @Override public void onReadCompleted(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i, java.nio.ByteBuffer b) {
+                    b.flip();
+                    byte[] a = new byte[b.remaining()];
+                    b.get(a);
+                    body.write(a, 0, a.length);
+                    b.clear();
+                    r.read(b);
+                }
+                @Override public void onSucceeded(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i) { done.countDown(); }
+                @Override public void onFailed(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i, android.net.http.HttpException e) {
+                    boolean offline = e instanceof android.net.http.NetworkException
+                        && (((android.net.http.NetworkException) e).getErrorCode() == android.net.http.NetworkException.ERROR_HOSTNAME_NOT_RESOLVED
+                        || ((android.net.http.NetworkException) e).getErrorCode() == android.net.http.NetworkException.ERROR_INTERNET_DISCONNECTED);
+                    err[0] = offline ? new java.net.UnknownHostException(e.getMessage()) : new IOException(e.getMessage(), e);
+                    done.countDown();
+                }
+                @Override public void onCanceled(android.net.http.UrlRequest r, android.net.http.UrlResponseInfo i) {
+                    if (err[0] == null) err[0] = new IOException("requête annulée");
+                    done.countDown();
+                }
+            };
+            android.net.http.UrlRequest.Builder b = engine(c).newUrlRequestBuilder(url, IO, cb);
+            for (Map.Entry<String, String> e : headers.entrySet()) b.addHeader(e.getKey(), e.getValue());
+            android.net.http.UrlRequest req = b.build();
+            req.start();
+            try {
+                if (!done.await(40, java.util.concurrent.TimeUnit.SECONDS)) { req.cancel(); throw new IOException("délai dépassé"); }
+            } catch (InterruptedException e) {
+                req.cancel();
+                Thread.currentThread().interrupt();
+                throw new IOException("interrompu");
+            }
+            if (err[0] != null) throw err[0];
+            return new String[] { String.valueOf(code[0]), body.toString("UTF-8") };
+        }
     }
 
     private static void sleep(long ms) {
@@ -272,6 +347,7 @@ final class Tracker {
     private static String eur(double n) { return Math.round(n) + "€"; }
 
     static synchronized void run(Context c) {
+        appContext = c.getApplicationContext();
         try {
             JSONObject cfg = loadConfig(c);
             JSONObject history = readJson(c, "history.json", "{\"products\":{}}");
