@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Phone Price Watch</title>
+  <meta name="description" content="Price history and buy signals for phones across French shops.">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%2316a34a'/><path d='M7 10l7 8 4-4 7 8' stroke='white' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" integrity="sha384-bs/nf9FbdNouRbMiFcrcZfLXYPKiPaGVGplVbv7dLGECccEXDW+S3zjqSKR5ZEaD" crossorigin="anonymous" defer></script>
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-inner">
+      <h1>Price Watch</h1>
+      <p id="checked" class="muted"></p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="season" class="season" aria-label="Sales calendar"></section>
+
+    <section aria-labelledby="models-h">
+      <h2 id="models-h" class="section-h">Models</h2>
+      <ul id="cards" class="cards"></ul>
+    </section>
+
+    <section id="detail" class="detail" hidden aria-live="polite"></section>
+  </main>
+
+  <footer class="wrap muted foot">
+    Prices from idealo.fr offer lists, checked every few hours. Lines show each shop's cheapest matching offer.
+    "Usual" = median of the daily best price over 30 days.
+  </footer>
+</body>
+</html>

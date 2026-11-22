@@ -1,0 +1,11 @@
+{
+  "name": "phone-price-tracker",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "track": "node scripts/scrape.mjs",
+    "test": "node scripts/test.mjs",
+    "serve": "npx --yes serve public"
+  }
+}

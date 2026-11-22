@@ -1,0 +1,18 @@
+{
+  "dealThresholdPct": 7,
+  "excludeShops": "aliexpress|onbuy",
+  "excludeTitles": "reconditionn|occasion|refurb|seconde main|coque|housse|étui|verre trempé|protection écran",
+  "products": [
+    { "id": "xiaomi-17t", "name": "Xiaomi 17T", "url": "https://www.idealo.fr/prix/210584711/xiaomi-17t.html", "include": "17\\s?T(?!\\s?Pro)", "alertBelow": 450 },
+    { "id": "xiaomi-17t-pro", "name": "Xiaomi 17T Pro", "url": "https://www.idealo.fr/prix/210584717/xiaomi-17t-pro.html", "include": "17\\s?T\\s?Pro", "alertBelow": 580 },
+    { "id": "xiaomi-15t", "name": "Xiaomi 15T", "url": "https://www.idealo.fr/prix/207831193/xiaomi-15t.html", "include": "15\\s?T(?!\\s?Pro)", "alertBelow": 360 },
+    { "id": "xiaomi-15t-pro", "name": "Xiaomi 15T Pro", "url": "https://www.idealo.fr/prix/207831411/xiaomi-15t-pro.html", "include": "15\\s?T\\s?Pro", "alertBelow": 500 },
+    { "id": "xiaomi-14t", "name": "Xiaomi 14T", "url": "https://www.idealo.fr/prix/204855127/xiaomi-14t.html", "include": "14\\s?T(?!\\s?Pro)", "alertBelow": 350 },
+    { "id": "xiaomi-14t-pro", "name": "Xiaomi 14T Pro", "url": "https://www.idealo.fr/prix/204855040/xiaomi-14t-pro.html", "include": "14\\s?T\\s?Pro", "alertBelow": 500 },
+    { "id": "poco-f8-pro", "name": "POCO F8 Pro", "url": "https://www.idealo.fr/prix/208650708/xiaomi-poco-f8-pro.html", "include": "F8\\s?Pro", "alertBelow": null },
+    { "id": "galaxy-s26-fe", "name": "Samsung Galaxy S26 FE", "url": "https://www.idealo.fr/prix/213529231/samsung-galaxy-s26-fe.html", "include": "S26\\s?FE", "alertBelow": null },
+    { "id": "pixel-10a", "name": "Google Pixel 10a", "url": "https://www.idealo.fr/prix/209471909/google-pixel-10a.html", "include": "10\\s?a\\b", "alertBelow": null },
+    { "id": "oneplus-15r", "name": "OnePlus 15R", "url": "https://www.idealo.fr/prix/208830261/oneplus-15r.html", "include": "15\\s?R\\b", "alertBelow": null },
+    { "id": "nothing-phone-3", "name": "Nothing Phone (3)", "url": "https://www.idealo.fr/prix/206828062/nothing-phone-3.html", "include": "Phone\\s?\\(?3\\)?(?!\\s?a)", "alertBelow": null }
+  ]
+}
