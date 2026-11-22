@@ -64,7 +64,8 @@ public class MainActivity extends Activity {
             }
         });
         setContentView(web);
-        TrackJob.schedule(this);
+        try { TrackJob.schedule(this); }
+        catch (RuntimeException e) { App.saveCrash(this, "Background checks could not be scheduled (app still works when opened)", e); }
         if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != android.content.pm.PackageManager.PERMISSION_GRANTED)
             requestPermissions(new String[] { Manifest.permission.POST_NOTIFICATIONS }, 1); // only prompts on Android 13+
         show(getIntent());
