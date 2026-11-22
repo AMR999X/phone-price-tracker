@@ -42,7 +42,8 @@ history now).
   idealo.fr and copying the product page link (`https://www.idealo.fr/prix/<id>/<name>.html`).
 - `include` is a regex the offer title must match. It keeps "17T" from matching "17T Pro" and drops accessories.
   Add a storage size to track one variant only, e.g. `"17\\s?T(?!\\s?Pro).*512"`.
-- `excludeShops` drops AliExpress/OnBuy by default (import versions, no French warranty). Remove it to include them.
+- `onlyShops` keeps big French retailers (Amazon, Fnac, Darty, Boulanger, Cdiscount, brand stores…), including their
+  partner sellers ("Marketplace"). Add a shop name to it to allow more. History of shops not in it is deleted on the next check.
 - Alerts fire once per drop: you're re-alerted only if the price falls another 1 € or more, or after it goes back up
   and drops again.
 - "Usual price" and deal alerts need 7 days of history. Cap alerts work from the first run.

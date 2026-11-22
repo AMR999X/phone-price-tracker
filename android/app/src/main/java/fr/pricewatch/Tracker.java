@@ -199,6 +199,28 @@ final class Tracker {
         }
     }
 
+    static boolean shopOk(String shop, Pattern exShops, Pattern onlyShops) {
+        return (exShops == null || !exShops.matcher(shop).find()) && (onlyShops == null || onlyShops.matcher(shop).find());
+    }
+
+    /** Drop history of shops now filtered out and of products removed from config.json, so charts and "usual" match. */
+    static void pruneHistory(JSONObject hp, JSONArray products, Pattern exShops, Pattern onlyShops) throws JSONException {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        for (int i = 0; i < products.length(); i++) ids.add(products.getJSONObject(i).getString("id"));
+        for (String id : new ArrayList<>(toList(hp.keys()))) {
+            if (!ids.contains(id)) { hp.remove(id); continue; }
+            JSONArray pts = hp.getJSONObject(id).getJSONArray("points"), kept = new JSONArray();
+            for (int i = 0; i < pts.length(); i++) {
+                JSONObject s = pts.getJSONObject(i).getJSONObject("s");
+                for (String shop : toList(s.keys())) if (!shopOk(shop, exShops, onlyShops)) s.remove(shop);
+                if (s.length() > 0) kept.put(pts.getJSONObject(i));
+            }
+            hp.getJSONObject(id).put("points", kept);
+        }
+    }
+
+    private static List<String> toList(Iterator<String> it) { List<String> l = new ArrayList<>(); it.forEachRemaining(l::add); return l; }
+
     private static String str(JSONObject o, String k) throws JSONException { return o.isNull(k) ? null : o.getString(k); }
     private static Pattern re(String s) { return s == null ? null : Pattern.compile(s, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE); }
     private static String eur(double n) { return Math.round(n) + "€"; }
@@ -210,12 +232,13 @@ final class Tracker {
             JSONObject alertState = readJson(c, "alert-state.json", "{}");
             String now = Instant.now().toString();
             double dealPct = cfg.optDouble("dealThresholdPct", 7);
-            Pattern exShops = re(str(cfg, "excludeShops")), exTitles = re(str(cfg, "excludeTitles"));
+            Pattern exShops = re(str(cfg, "excludeShops")), exTitles = re(str(cfg, "excludeTitles")), onlyShops = re(str(cfg, "onlyShops"));
             JSONArray latestProducts = new JSONArray();
             NotificationManager nm = c.getSystemService(NotificationManager.class);
-            nm.createNotificationChannel(new NotificationChannel("alerts", "Price alerts", NotificationManager.IMPORTANCE_HIGH));
+            nm.createNotificationChannel(new NotificationChannel("alerts", "Alertes de prix", NotificationManager.IMPORTANCE_HIGH));
 
             JSONArray products = cfg.getJSONArray("products");
+            pruneHistory(history.getJSONObject("products"), products, exShops, onlyShops);
             for (int i = 0; i < products.length(); i++) {
                 JSONObject p = products.getJSONObject(i);
                 String id = p.getString("id"), name = p.getString("name");
@@ -226,7 +249,7 @@ final class Tracker {
                     Pattern include = re(p.has("include") ? str(p, "include") : null);
                     List<Offer> offers = new ArrayList<>();
                     for (Offer o : parseOffers(fetch(p.getString("url")))) {
-                        if (exShops != null && exShops.matcher(o.shop).find()) continue;
+                        if (!shopOk(o.shop, exShops, onlyShops)) continue;
                         if (exTitles != null && exTitles.matcher(o.title).find()) continue;
                         if (include != null && !include.matcher(o.title).find()) continue;
                         offers.add(o);
@@ -255,10 +278,10 @@ final class Tracker {
                     boolean capDue = due(st, "cap", underCap, a.price), dealDue = due(st, "deal", a.isDeal, a.price);
                     if (capDue || dealDue) {
                         List<String> reasons = new ArrayList<>();
-                        if (underCap) reasons.add("under your " + eur(cap) + " cap");
-                        if (a.isDeal) reasons.add(String.format(Locale.ROOT, "%.0f%% below its usual %s", Math.abs(a.pct), eur(a.usual)));
-                        if (a.isLow) reasons.add("lowest price tracked so far");
-                        String title = name + ": " + eur(a.price) + " at " + a.shop;
+                        if (underCap) reasons.add("sous ton plafond de " + eur(cap));
+                        if (a.isDeal) reasons.add(String.format(Locale.ROOT, "%.0f %% sous son prix habituel de %s", Math.abs(a.pct), eur(a.usual)));
+                        if (a.isLow) reasons.add("prix le plus bas relevé");
+                        String title = name + " : " + eur(a.price) + " chez " + a.shop;
                         String text = String.join(" · ", reasons) + ".\n" + offers.get(0).title;
                         if (nm.areNotificationsEnabled()) {
                             notify(c, nm, id, title, text, offers.get(0).url);
@@ -302,7 +325,7 @@ final class Tracker {
             .setStyle(new Notification.BigTextStyle().bigText(text))
             .setContentIntent(PendingIntent.getActivity(c, id.hashCode(), open, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT))
             .setAutoCancel(true);
-        if (url != null) b.addAction(new Notification.Action.Builder(null, "Open offer",
+        if (url != null) b.addAction(new Notification.Action.Builder(null, "Voir l'offre",
             PendingIntent.getActivity(c, id.hashCode() + 1, new Intent(Intent.ACTION_VIEW, Uri.parse(url)), PendingIntent.FLAG_IMMUTABLE)).build());
         nm.notify(id.hashCode(), b.build());
     }

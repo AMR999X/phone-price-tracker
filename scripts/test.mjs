@@ -13,7 +13,7 @@ assert.equal(ymd(winterSales(2027)), "2027-1-6");
 assert.equal(ymd(winterSales(2025)), "2025-1-8");   // 2nd Wed is the 8th
 assert.equal(ymd(summerSales(2026)), "2026-6-24");
 assert.equal(ymd(summerSales(2027)), "2027-6-23");  // last Wed is the 30th (>28) → one before
-assert.ok(season(new Date(2026, 10, 22)).active.some((e) => e.name === "Black Friday week"));
+assert.ok(season(new Date(2026, 10, 22)).active.some((e) => e.name === "Semaine du Black Friday"));
 assert.ok(season(new Date(2026, 11, 10)).active.some((e) => e.effect === "up"));
 
 // Insights: 20 days at ~500 €, then a drop to 450 €

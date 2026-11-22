@@ -47,6 +47,15 @@ async function main() {
   const now = new Date().toISOString();
   const excludeShops = cfg.excludeShops && new RegExp(cfg.excludeShops, "i");
   const excludeTitles = cfg.excludeTitles && new RegExp(cfg.excludeTitles, "i");
+  const onlyShops = cfg.onlyShops && new RegExp(cfg.onlyShops, "i");
+  const shopOk = (shop) => !(excludeShops?.test(shop)) && (!onlyShops || onlyShops.test(shop));
+  // Drop history of shops now filtered out and of products removed from config.json, so charts and "usual" match.
+  const ids = new Set(cfg.products.map((p) => p.id));
+  for (const [id, h] of Object.entries(history.products)) {
+    if (!ids.has(id)) { delete history.products[id]; continue; }
+    for (const pt of h.points) for (const shop of Object.keys(pt.s)) if (!shopOk(shop)) delete pt.s[shop];
+    h.points = h.points.filter((pt) => Object.keys(pt.s).length);
+  }
   const latest = { checkedAt: now, dealThresholdPct: cfg.dealThresholdPct, products: [] };
   let failures = 0;
 
@@ -57,7 +66,7 @@ async function main() {
     try {
       const include = p.include && new RegExp(p.include, "i");
       const offers = parseOffers(await fetchHtml(p.url))
-        .filter((o) => !(excludeShops?.test(o.shop)) && !(excludeTitles?.test(o.title)) && (!include || include.test(o.title)))
+        .filter((o) => shopOk(o.shop) && !(excludeTitles?.test(o.title)) && (!include || include.test(o.title)))
         .sort((a, b) => a.price - b.price);
       if (!offers.length) throw new Error("no matching offers (page layout changed, or `include` filter too strict)");
 

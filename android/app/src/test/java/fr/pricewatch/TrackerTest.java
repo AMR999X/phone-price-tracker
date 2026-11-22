@@ -43,6 +43,21 @@ public class TrackerTest {
         assertNull(Tracker.analyze(new JSONArray(), t0, 7));
     }
 
+    @Test public void pruneDropsFilteredShopsAndRemovedModels() throws Exception {
+        java.util.regex.Pattern only = java.util.regex.Pattern.compile("^(Fnac\\.com)( \\(Marketplace\\))?$", java.util.regex.Pattern.CASE_INSENSITIVE);
+        JSONObject hp = new JSONObject()
+            .put("keep", new JSONObject().put("points", new JSONArray()
+                .put(new JSONObject().put("t", "2026-11-01T00:00:00Z").put("s", new JSONObject().put("Fnac.com (Marketplace)", 1).put("TRIMOX", 2)))
+                .put(new JSONObject().put("t", "2026-11-02T00:00:00Z").put("s", new JSONObject().put("TRIMOX", 3)))))
+            .put("gone", new JSONObject().put("points", new JSONArray()));
+        JSONArray products = new JSONArray().put(new JSONObject().put("id", "keep"));
+        Tracker.pruneHistory(hp, products, null, only);
+        assertFalse(hp.has("gone"));
+        JSONArray pts = hp.getJSONObject("keep").getJSONArray("points");
+        assertEquals(1, pts.length()); // the TRIMOX-only snapshot is empty after pruning, so it goes
+        assertEquals("[\"Fnac.com (Marketplace)\"]", pts.getJSONObject(0).getJSONObject("s").names().toString());
+    }
+
     @Test public void snapshotCompare() throws Exception {
         assertTrue(Tracker.sameSnapshot(new JSONObject().put("A", 1).put("B", 2), new JSONObject().put("B", 2).put("A", 1)));
         assertFalse(Tracker.sameSnapshot(new JSONObject().put("A", 1), new JSONObject().put("A", 2)));

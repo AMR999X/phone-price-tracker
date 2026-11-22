@@ -85,7 +85,7 @@ public class MainActivity extends Activity {
         String text;
         try (InputStream in = new FileInputStream(f)) { text = Tracker.readAll(in); } catch (IOException e) { text = e.toString(); }
         TextView tv = new TextView(this);
-        tv.setText("Price Watch crashed last time. Take a screenshot of this and send it, then tap here to continue.\n\n" + text);
+        tv.setText("Price Watch a planté la dernière fois. Fais une capture d'écran et envoie-la, puis touche ici pour continuer.\n\n" + text);
         tv.setTextIsSelectable(true);
         tv.setPadding(40, 120, 40, 40);
         tv.setOnClickListener(v -> { f.delete(); recreate(); });
@@ -102,7 +102,7 @@ public class MainActivity extends Activity {
         // Opening the app refreshes prices if the last check is over 20 minutes old.
         File latest = new File(getFilesDir(), "latest.json");
         if (latest.exists() && System.currentTimeMillis() - latest.lastModified() < 20 * 60_000L) return;
-        Toast.makeText(this, "Checking prices…", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Vérification des prix…", Toast.LENGTH_SHORT).show();
         new Thread(() -> { Tracker.run(getApplicationContext()); runOnUiThread(web::reload); }).start();
     }
 
