@@ -11,7 +11,7 @@ The site also shows the French sales calendar (Black Friday, Christmas run-up, s
 Prime Day, new Xiaomi T launches) on the chart and in a buy verdict per phone: Buy / Wait / Meh.
 
 It runs as an **Android app** that checks prices from your phone (idealo blocks cloud servers like GitHub's, not
-phones), every 3 hours in the background, and sends normal Android notifications.
+phones), every hour in the background, and sends normal Android notifications.
 
 ```
 config.json             ← phones, caps, filters (edit this on github.com; the app downloads it each check)
@@ -25,7 +25,7 @@ PriceWatch.apk          ← the built app
 
 1. On your phone, open https://github.com/AMR999X/phone-price-tracker/raw/main/PriceWatch.apk and install it
    (allow "install unknown apps" for your browser when asked).
-2. Open **Price Watch**, allow notifications. It checks prices right away, then every 3 hours.
+2. Open **Price Watch**, allow notifications. It checks prices right away, then every hour.
 3. **Xiaomi / POCO / Samsung phones** kill background apps: Settings → Apps → Price Watch → Battery →
    **No restrictions** (Xiaomi: also turn on **Autostart**). Otherwise checks only happen when you open the app.
 

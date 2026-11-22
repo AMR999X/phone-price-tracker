@@ -7,7 +7,8 @@
     <application
         android:label="Price Watch"
         android:icon="@mipmap/ic_launcher"
-        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+        android:name=".App"
+        android:theme="@style/AppTheme">
         <activity
             android:name=".MainActivity"
             android:exported="true"

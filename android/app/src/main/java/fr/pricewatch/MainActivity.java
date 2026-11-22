@@ -5,11 +5,13 @@ import android.app.Activity;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
-import android.view.Window;
+import android.webkit.RenderProcessGoneDetail;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.ScrollView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import java.io.ByteArrayInputStream;
@@ -27,7 +29,7 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        if (showCrashReport()) return;
         web = new WebView(this);
         web.getSettings().setJavaScriptEnabled(true);
         web.getSettings().setDomStorageEnabled(true);
@@ -44,6 +46,14 @@ public class MainActivity extends Activity {
                 } catch (IOException e) {
                     return new WebResourceResponse("text/plain", "utf-8", 404, "Not Found", Collections.emptyMap(), new ByteArrayInputStream(new byte[0]));
                 }
+            }
+
+            @Override
+            public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
+                // Without this, a crashed page renderer kills the whole app.
+                App.saveCrash(MainActivity.this, "Page renderer stopped (crashed: " + detail.didCrash() + ")", null);
+                recreate();
+                return true;
             }
 
             @Override
@@ -67,12 +77,30 @@ public class MainActivity extends Activity {
         show(intent);
     }
 
+    /** If the last run crashed, show the error instead of the app; tap to dismiss and continue. */
+    private boolean showCrashReport() {
+        File f = App.crashFile(this);
+        if (!f.exists()) return false;
+        String text;
+        try (InputStream in = new FileInputStream(f)) { text = Tracker.readAll(in); } catch (IOException e) { text = e.toString(); }
+        TextView tv = new TextView(this);
+        tv.setText("Price Watch crashed last time. Take a screenshot of this and send it, then tap here to continue.\n\n" + text);
+        tv.setTextIsSelectable(true);
+        tv.setPadding(40, 120, 40, 40);
+        tv.setOnClickListener(v -> { f.delete(); recreate(); });
+        ScrollView sv = new ScrollView(this);
+        sv.addView(tv);
+        setContentView(sv);
+        return true;
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
-        // Opening the app refreshes prices if the last check is over an hour old.
+        if (web == null) return; // showing a crash report
+        // Opening the app refreshes prices if the last check is over 20 minutes old.
         File latest = new File(getFilesDir(), "latest.json");
-        if (latest.exists() && System.currentTimeMillis() - latest.lastModified() < 3_600_000L) return;
+        if (latest.exists() && System.currentTimeMillis() - latest.lastModified() < 20 * 60_000L) return;
         Toast.makeText(this, "Checking prices…", Toast.LENGTH_SHORT).show();
         new Thread(() -> { Tracker.run(getApplicationContext()); runOnUiThread(web::reload); }).start();
     }

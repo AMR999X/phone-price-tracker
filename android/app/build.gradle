@@ -7,10 +7,11 @@ android {
         applicationId 'fr.pricewatch'
         minSdk 29
         targetSdk 34 // 35+ forces edge-to-edge drawing under the status bar; not worth it for a sideloaded app
-        versionCode 1
-        versionName '1.0'
+        versionCode 2
+        versionName "1.1"
     }
     // The app's screens are the website itself.
+    buildFeatures { buildConfig true } // App.java puts the version in crash reports
     sourceSets { main { assets.srcDirs = ['../../public'] } }
     compileOptions {
         sourceCompatibility JavaVersion.VERSION_17

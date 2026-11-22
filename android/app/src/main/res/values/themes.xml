@@ -1,0 +1,9 @@
+<resources>
+    <!-- Plain Material, not DeviceDefault: OEMs (Xiaomi, Samsung) swap DeviceDefault for their own themes. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/bg</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:windowLightStatusBar">true</item>
+    </style>
+    <color name="bg">#F6F5F2</color>
+</resources>

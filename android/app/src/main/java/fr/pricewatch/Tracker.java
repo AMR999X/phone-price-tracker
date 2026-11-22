@@ -64,15 +64,16 @@ final class Tracker {
     private static final Pattern P_HREF = Pattern.compile("href=\"(/relocator/relocate\\?[^\"]+)\"");
 
     static String decode(String s) {
-        StringBuilder out = new StringBuilder();
+        StringBuffer out = new StringBuffer(); // StringBuilder overloads of appendReplacement need Android 14
         Matcher m = NUM_ENT.matcher(s);
         while (m.find()) m.appendReplacement(out, Matcher.quoteReplacement(new String(Character.toChars(Integer.parseInt(m.group(1))))));
         m.appendTail(out);
         m = NAMED_ENT.matcher(out.toString());
-        out = new StringBuilder();
+        out = new StringBuffer();
         while (m.find()) { String v = ENTITIES.get(m.group(1)); m.appendReplacement(out, Matcher.quoteReplacement(v != null ? v : m.group())); }
         m.appendTail(out);
-        return out.toString().replaceAll("(?U)\\s+", " ").trim();
+        // Android regex is ICU, which rejects (?U); list the non-ASCII spaces JS \s also matches.
+        return out.toString().replaceAll("[\\s\\u00A0\\u2000-\\u200B\\u202F\\u3000]+", " ").trim();
     }
 
     private static String first(Pattern p, String s) { Matcher m = p.matcher(s); return m.find() ? m.group(1) : null; }
@@ -273,7 +274,7 @@ final class Tracker {
             writeJson(c, "history.json", history);
             writeJson(c, "latest.json", new JSONObject().put("checkedAt", now).put("dealThresholdPct", dealPct).put("products", latestProducts));
             writeJson(c, "alert-state.json", alertState);
-        } catch (Exception e) {
+        } catch (Throwable e) { // never let a bad page or full disk crash the app
             Log.e(TAG, "run failed", e);
         }
     }
