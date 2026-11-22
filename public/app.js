@@ -108,6 +108,7 @@ function renderCards() {
 
 // ---------- Detail ----------
 let chart, range = 90;
+const BEST = "Best price", shown = new Map(); // product id → names of the lines shown
 const RANGES = [[30, "30 d"], [90, "90 d"], [365, "1 y"], [0, "All"]];
 
 function renderDetail(id) {
@@ -137,6 +138,7 @@ function renderDetail(id) {
         `<button data-range="${d}" aria-pressed="${d === range}">${l}</button>`).join("")}</div>
     </div>
     <div class="chart-box"><canvas id="chart" role="img" aria-label="Price history chart for ${esc(p.name)}"></canvas></div>
+    <div id="shops" class="chips" role="group" aria-label="Lines shown on the chart"></div>
     <p class="muted legend-note">Shaded: sales periods (green = prices usually drop, red = usually climb). Right of the "today" line: what's coming.</p>
     <h3>Current offers</h3>
     ${p.offers?.length ? `<div class="table-wrap"><table class="offers">
@@ -164,22 +166,45 @@ function drawChart(p) {
   const points = productPoints(p.id);
   const best = bestSeries(points);
   if (!best.length) return;
-  const palette = [1, 2, 3, 4, 5].map((i) => css(`--s${i}`));
+  const palette = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => css(`--s${i}`));
   const first = best[0].x;
   const xMin = range ? Math.min(first, now - range * DAY) : first - DAY;
   const xMax = now + Math.max(14, (range || 90) / 6) * DAY;
 
-  // Top 5 cheapest shops right now get their own line.
-  const shops = Object.entries(points.at(-1).s).sort((a, b) => a[1] - b[1]).slice(0, 5).map(([s]) => s);
-  const shopSets = shops.map((shop, i) => {
+  // Shops selling it now, cheapest first, then shops that only appear in older snapshots.
+  const nowS = points.at(-1).s;
+  const shops = [...new Set([...Object.keys(nowS).sort((a, b) => nowS[a] - nowS[b]), ...points.flatMap((pt) => Object.keys(pt.s))])];
+  const vis = shown.get(p.id) ?? new Set([BEST, ...shops.slice(0, 5)]);
+  shown.set(p.id, vis);
+  const color = (i) => palette[i % palette.length];
+  const shopSets = shops.flatMap((shop, i) => {
+    if (!vis.has(shop)) return [];
     const data = points.map((pt) => ({ x: Date.parse(pt.t), y: pt.s[shop] ?? null }));
     data.push({ x: endT, y: data.at(-1).y });
-    return { label: shop, data, borderColor: palette[i], backgroundColor: palette[i], borderWidth: 1.5, stepped: true, pointRadius: 0, spanGaps: false };
+    return [{ label: shop, data, borderColor: color(i), backgroundColor: color(i), borderWidth: 1.5, stepped: true, pointRadius: 0, spanGaps: false }];
   });
   const datasets = [
-    { label: "Best price", data: best, borderColor: css("--ink"), backgroundColor: css("--ink"), borderWidth: 3, stepped: true, pointRadius: 0 },
+    ...(vis.has(BEST) ? [{ label: BEST, data: best, borderColor: css("--ink"), backgroundColor: css("--ink"), borderWidth: 3, stepped: true, pointRadius: 0 }] : []),
     ...shopSets,
   ];
+
+  // Chips double as the legend: tap a shop to show/hide its line.
+  const chip = (name, dot, price) => `<button class="chip" data-name="${esc(name)}" aria-pressed="${vis.has(name)}">
+    <span class="dot" style="background:${dot}"></span>${esc(name)}${price ? ` <span class="muted">${eur(price)}</span>` : ""}</button>`;
+  const box = $("#shops");
+  box.innerHTML = [
+    ...[["top", "Top 5"], ["all", "All shops"], ["best", "Best only"]].map(([k, l]) => `<button class="chip chip-preset" data-preset="${k}">${l}</button>`),
+    chip(BEST, css("--ink"), best.at(-1).y),
+    ...shops.map((s, i) => chip(s, color(i), nowS[s])),
+  ].join("");
+  box.onclick = (e) => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    const k = b.dataset.preset;
+    if (k) shown.set(p.id, new Set([BEST, ...(k === "all" ? shops : k === "top" ? shops.slice(0, 5) : [])]));
+    else vis.has(b.dataset.name) ? vis.delete(b.dataset.name) : vis.add(b.dataset.name);
+    drawChart(p);
+  };
   if (p.alertBelow) datasets.push({ label: "Your cap", data: [{ x: xMin, y: p.alertBelow }, { x: xMax, y: p.alertBelow }],
     borderColor: css("--accent"), borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0 });
 
@@ -224,7 +249,7 @@ function drawChart(p) {
         y: { grid: { color: grid }, ticks: { color: tick, callback: (v) => eur(v) }, grace: "8%" },
       },
       plugins: {
-        legend: { labels: { color: css("--ink"), boxWidth: 12, boxHeight: 2, font: { family: css("--font") } } },
+        legend: { display: false },
         tooltip: { callbacks: { title: (it) => dLong(new Date(it[0].parsed.x)), label: (it) => ` ${it.dataset.label}: ${eurC(it.parsed.y)}` } },
       },
     },

@@ -10,37 +10,31 @@ alerts you when a phone:
 The site also shows the French sales calendar (Black Friday, Christmas run-up, soldes d'hiver/d'été, French Days,
 Prime Day, new Xiaomi T launches) on the chart and in a buy verdict per phone: Buy / Wait / Meh.
 
+It runs as an **Android app** that checks prices from your phone (idealo blocks cloud servers like GitHub's, not
+phones), every 3 hours in the background, and sends normal Android notifications.
+
 ```
-config.json             ← phones, caps, filters (edit this)
-scripts/scrape.mjs      ← fetch prices, update history, send alerts
-scripts/notify.mjs      ← ntfy / Discord / SMS / email
-public/                 ← the website (static, no build step)
-public/data/*.json      ← price history (written by the scraper)
-.github/workflows/      ← runs the scraper every 3 hours
+config.json             ← phones, caps, filters (edit this on github.com; the app downloads it each check)
+android/                ← the app: background checker + notifications; its screens are public/
+public/                 ← the website / app screens (static, no build step)
+scripts/                ← Node versions of the scraper and tests (npm test)
+PriceWatch.apk          ← the built app
 ```
 
-## Setup (about 15 min)
+## Install
 
-1. **Put it on GitHub.** Create an empty repo on github.com, then:
-   ```
-   git remote add origin https://github.com/<you>/phone-price-tracker.git
-   git push -u origin main
-   ```
-2. **Host the site on Vercel** (free): "Add New Project", import the repo, Framework preset **Other**, Output
-   directory **`public`**. Every data commit redeploys automatically (~8 deploys/day, well within the free plan).
-3. **Turn on alerts** in the repo's Settings → Secrets and variables → Actions → *New repository secret*. Set any of these:
+1. On your phone, open https://github.com/AMR999X/phone-price-tracker/raw/main/PriceWatch.apk and install it
+   (allow "install unknown apps" for your browser when asked).
+2. Open **Price Watch**, allow notifications. It checks prices right away, then every 3 hours.
+3. **Xiaomi / POCO / Samsung phones** kill background apps: Settings → Apps → Price Watch → Battery →
+   **No restrictions** (Xiaomi: also turn on **Autostart**). Otherwise checks only happen when you open the app.
 
-   | Channel | Secrets | Notes |
-   |---|---|---|
-   | **Phone push (recommended)** | `NTFY_TOPIC` | Install the free **ntfy** app, subscribe to a long random topic like `prix-tel-8f3k2q9x`, and put the same name here. Free, instant. |
-   | SMS (Free Mobile) | `FREE_MOBILE_USER`, `FREE_MOBILE_PASS` | Free if you're a Free Mobile customer: Espace abonné → Mes options → *Notifications par SMS*. |
-   | SMS (any operator) | `TWILIO_SID`, `TWILIO_TOKEN`, `TWILIO_FROM`, `ALERT_PHONE` | Twilio, paid (~0.08 €/SMS). `ALERT_PHONE` like `+33612345678`. |
-   | Discord | `DISCORD_WEBHOOK_URL` | Channel settings → Integrations → Webhooks → copy URL. |
-   | Email | `RESEND_API_KEY`, `ALERT_EMAIL` | resend.com free tier; without your own domain it only sends to your sign-up address. |
+Rebuild after changing the app: `cd android && ./gradlew assembleDebug` (needs the Android SDK), then copy
+`android/app/build/outputs/apk/debug/app-debug.apk` to `PriceWatch.apk`. Build on the same PC each time: the
+signing key lives in `~/.android/debug.keystore`, and a different key forces an uninstall (which wipes the history).
 
-   Optional *variable* (not secret) `SITE_URL` = your Vercel URL.
-4. **Schedule it on your PC** (idealo blocks GitHub's servers): `setx NTFY_TOPIC <your-topic>`, then
-   `schtasks /create /tn "Phone price tracker" /sc hourly /mo 3 /tr "<repo path>\scripts\track-local.cmd"`.
+The Vercel site still works as a viewer of `public/data`, but nothing updates that data anymore (only the phone has
+history now).
 
 ## Everyday use
 
@@ -63,7 +57,6 @@ npm run serve     # preview at http://localhost:3000
 
 ## If it stops working
 
-- **Card says "Last check failed: HTTP 403"**: idealo is blocking GitHub's servers. Run `npm run track` from your PC
-  on a schedule instead (Windows Task Scheduler), then `git push`.
-- **"no matching offers"**: idealo changed its HTML. Update the 4 patterns in `scripts/parse.mjs`, or your `include`
-  regex is too strict.
+- **Card says "Last check failed: HTTP 403"**: idealo is blocking your connection; try again on Wi-Fi vs mobile data.
+- **"no matching offers"**: idealo changed its HTML. Update the 4 patterns in `scripts/parse.mjs` and the same ones in
+  `android/app/src/main/java/fr/pricewatch/Tracker.java`, or your `include` regex is too strict.

@@ -1,0 +1,24 @@
+plugins { id 'com.android.application' }
+
+android {
+    namespace 'fr.pricewatch'
+    compileSdk 36
+    defaultConfig {
+        applicationId 'fr.pricewatch'
+        minSdk 29
+        targetSdk 34 // 35+ forces edge-to-edge drawing under the status bar; not worth it for a sideloaded app
+        versionCode 1
+        versionName '1.0'
+    }
+    // The app's screens are the website itself.
+    sourceSets { main { assets.srcDirs = ['../../public'] } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+dependencies {
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.json:json:20240303'
+}
