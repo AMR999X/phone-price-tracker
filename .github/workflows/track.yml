@@ -1,8 +1,7 @@
 name: Track prices
 
 on:
-  schedule:
-    - cron: "17 */3 * * *"   # every 3 hours (UTC)
+  # schedule removed: idealo returns 403 to GitHub servers; runs from the PC via scripts/track-local.cmd
   workflow_dispatch:
 
 permissions:

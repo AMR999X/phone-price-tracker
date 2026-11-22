@@ -39,7 +39,8 @@ public/data/*.json      ← price history (written by the scraper)
    | Email | `RESEND_API_KEY`, `ALERT_EMAIL` | resend.com free tier; without your own domain it only sends to your sign-up address. |
 
    Optional *variable* (not secret) `SITE_URL` = your Vercel URL.
-4. **Run it once**: Actions tab → *Track prices* → *Run workflow*. After that it runs every 3 hours.
+4. **Schedule it on your PC** (idealo blocks GitHub's servers): `setx NTFY_TOPIC <your-topic>`, then
+   `schtasks /create /tn "Phone price tracker" /sc hourly /mo 3 /tr "<repo path>\scripts\track-local.cmd"`.
 
 ## Everyday use
 
