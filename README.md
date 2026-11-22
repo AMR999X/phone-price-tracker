@@ -26,10 +26,8 @@ public/data/*.json      ← price history (written by the scraper)
    git remote add origin https://github.com/<you>/phone-price-tracker.git
    git push -u origin main
    ```
-2. **Host the site.** Either
-   - **Vercel**: "Add New Project", import the repo, Framework preset **Other**, Output directory **`public`**. Every
-     data commit redeploys automatically. Or
-   - **GitHub Pages**: Settings → Pages → Deploy from branch `main`, folder `/` won't work, so prefer Vercel.
+2. **Host the site on Vercel** (free): "Add New Project", import the repo, Framework preset **Other**, Output
+   directory **`public`**. Every data commit redeploys automatically (~8 deploys/day, well within the free plan).
 3. **Turn on alerts** in the repo's Settings → Secrets and variables → Actions → *New repository secret*. Set any of these:
 
    | Channel | Secrets | Notes |
