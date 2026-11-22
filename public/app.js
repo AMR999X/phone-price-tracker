@@ -59,9 +59,23 @@ function specs(title) {
   if (color) out.push(color[0].toUpperCase() + color.slice(1));
   return out;
 }
-const sellerOf = (shop) => /\(Marketplace\)/i.test(shop)
-  ? { name: shop.replace(/\s*\(Marketplace\)/i, ""), note: "Vendeur partenaire" }
-  : { name: shop, note: "Vendu par l'enseigne" };
+// Shop keys may carry "(Marketplace)" and/or "(Reconditionné)".
+const sellerOf = (shop) => ({
+  name: shop.replace(/\s*\((Marketplace|Reconditionné)\)/gi, ""),
+  note: /\(Marketplace\)/i.test(shop) ? "Vendeur partenaire" : "Vendu par l'enseigne",
+  refurb: /\(Reconditionné\)/i.test(shop),
+});
+const shopLabel = (shop) => { const s = sellerOf(shop); return s.name + (s.note === "Vendeur partenaire" ? " · partenaire" : "") + (s.refurb ? " · reconditionné" : ""); };
+
+// idealo's 1-year daily best price, all sellers: [["YYYY-MM-DD", price], …]
+const idealoOf = (id) => (history?.products?.[id]?.idealo?.points ?? []).map(([d, y]) => ({ x: Date.parse(d + "T12:00:00"), y }));
+function yearStats(id) {
+  const pts = idealoOf(id);
+  if (!pts.length) return null;
+  const low = pts.reduce((m, p) => (p.y < m.y ? p : m));
+  const last90 = pts.filter((p) => p.x >= now - 90 * DAY).map((p) => p.y).sort((a, b) => a - b);
+  return { low, med: last90.length ? last90[last90.length >> 1] : null };
+}
 
 // ---------- Theme ----------
 const root = document.documentElement;
@@ -102,8 +116,9 @@ function modelSwitch(tab) {
 }
 const priceTag = (price, big) => `<span class="tag${big ? " tag-big" : ""}">${eur(price)}</span>`;
 
-function sparkline(points) {
-  const s = bestSeries(points).filter((p) => p.x >= now - 60 * DAY);
+function sparkline(points, id) {
+  const own = bestSeries(points); // fall back to idealo's history while ours is short
+  const s = (own.length >= 4 ? own : idealoOf(id)).filter((p) => p.x >= now - 60 * DAY);
   if (s.length < 2) return "";
   const W = 96, H = 28;
   const x0 = s[0].x, x1 = s.at(-1).x || x0 + 1, ys = s.map((p) => p.y), lo = Math.min(...ys), hi = Math.max(...ys);
@@ -134,20 +149,20 @@ function viewModels() {
       : `<span class="muted">Pas de plafond</span>`;
     return `<li><a class="model tone-${v.tone}" href="${href("courbe", p.id)}">
       <span class="m-top"><span class="m-name">${esc(p.name)}</span><span class="pill pill-${v.tone}">${v.label}</span></span>
-      <span class="m-mid">${priceTag(a.price)}<span class="m-shop">chez ${esc(sellerOf(a.shop).name)}</span>${sparkline(pointsOf(p.id))}</span>
+      <span class="m-mid">${priceTag(a.price)}<span class="m-shop">chez ${esc(sellerOf(a.shop).name)}</span>${sparkline(pointsOf(p.id), p.id)}</span>
       <span class="m-foot">${vsUsual}<span class="m-cap">${cap}</span></span>
-      ${p.error ? `<span class="err">Dernière vérification échouée : ${esc(p.error)}</span>` : ""}
+      ${p.error ? `<span class="err">${esc(p.error)}${p.okAt ? ` · prix du ${dLong(new Date(p.okAt))}` : ""}</span>` : ""}
     </a></li>`;
   }).join("")}</ul>`;
 }
 
 // ---------- Tab: Courbe ----------
-let chart, range = 30;
+let chart, range = 90;
 const RANGES = [[30, "30 j"], [90, "90 j"], [365, "1 an"], [0, "Tout"]];
-const BEST = "Meilleur prix", shown = new Map(); // model id → names of the lines shown
+const BEST = "Meilleur prix", IDEALO = "Tous vendeurs (idealo)", shown = new Map(); // model id → names of the lines shown
 
 function viewCurve() {
-  const p = productById(state.id), a = analyses.get(p.id), v = verdict(a, p.alertBelow);
+  const p = productById(state.id), a = analyses.get(p.id), v = verdict(a, p.alertBelow), ys = yearStats(p.id);
   return `${modelSwitch("courbe")}
   ${v ? `<div class="verdict tone-${v.tone}"><span class="pill pill-${v.tone}">${v.label}</span><p>${esc(v.text)}</p></div>` : ""}
   ${a ? `<dl class="stats">
@@ -155,6 +170,8 @@ function viewCurve() {
     <div><dt>Prix habituel</dt><dd class="num">${a.usual ? eur(a.usual) : "—"}</dd><dd class="muted">${a.usual ? `médiane 30 j · ${pctTxt(a.pct)}` : `encore ${7 - a.days} j d'historique`}</dd></div>
     <div><dt>Plus bas relevé</dt><dd class="num">${eur(a.low.price)}</dd><dd class="muted">${dShort(new Date(a.low.t))} · ${esc(sellerOf(a.low.shop).name)}</dd></div>
     <div><dt>Ton plafond</dt><dd class="num">${p.alertBelow ? eur(p.alertBelow) : "—"}</dd><dd class="muted">${p.alertBelow ? "alerte à ce prix ou moins" : "à régler dans config.json"}</dd></div>
+    ${ys ? `<div><dt>Plus bas sur 1 an</dt><dd class="num">${eur(ys.low.y)}</dd><dd class="muted">${dShort(new Date(ys.low.x))} · tous vendeurs</dd></div>
+    <div><dt>Médiane 90 jours</dt><dd class="num">${ys.med ? eur(ys.med) : "—"}</dd><dd class="muted">tous vendeurs, imports compris</dd></div>` : ""}
   </dl>` : ""}
   <section class="panel">
     <div class="panel-head">
@@ -164,7 +181,7 @@ function viewCurve() {
     </div>
     <div class="chart-box"><canvas id="chart" role="img" aria-label="Courbe de prix du ${esc(p.name)}"></canvas></div>
     <div id="shops" class="chips" role="group" aria-label="Lignes affichées"></div>
-    <p class="note">Touche la courbe pour lire le prix exact. Zones vertes : périodes où les prix baissent d'habitude ; rouges : où ils montent.</p>
+    <p class="note">Touche la courbe pour lire le prix exact. Pointillés gris : meilleur prix tous vendeurs selon idealo (imports et AliExpress compris), donc souvent plus bas que dans les enseignes fiables. Zones vertes : périodes où les prix baissent d'habitude ; rouges : où ils montent.</p>
   </section>`;
 }
 
@@ -176,30 +193,31 @@ function drawChart(p) {
   const box = $("#shops");
   if (!window.Chart) { box.innerHTML = `<p class="err">Le graphique a besoin d'internet pour se charger.</p>`; return; }
   const points = pointsOf(p.id);
-  const best = bestSeries(points);
-  if (!best.length) { box.innerHTML = `<p class="muted">Pas encore de prix pour ce modèle.</p>`; return; }
+  const best = bestSeries(points), ide = idealoOf(p.id);
+  if (!best.length && !ide.length) { box.innerHTML = `<p class="muted">Pas encore de prix pour ce modèle.</p>`; return; }
   const palette = [1, 2, 3, 4, 5, 6, 7, 8].map((i) => css(`--s${i}`));
-  const first = best[0].x;
-  const xMin = range ? Math.min(first - DAY, now - range * DAY) : first - DAY;
+  const first = Math.min(best[0]?.x ?? now, ide[0]?.x ?? now);
+  const xMin = range ? now - range * DAY : first - DAY;
   const xMax = now + Math.max(10, (range || 90) / 6) * DAY;
   // Few snapshots yet: draw the dots so there is something to touch.
   const dot = points.length < 6 ? 4 : 0;
 
   // Shops selling it now, cheapest first, then shops that only appear in older snapshots.
-  const nowS = points.at(-1).s;
+  const nowS = points.at(-1)?.s ?? {};
   const shops = [...new Set([...Object.keys(nowS).sort((a, b) => nowS[a] - nowS[b]), ...points.flatMap((pt) => Object.keys(pt.s))])];
-  const vis = shown.get(p.id) ?? new Set([BEST, ...shops.slice(0, 3)]);
+  const vis = shown.get(p.id) ?? new Set([BEST, IDEALO, ...shops.slice(0, 3)]);
   shown.set(p.id, vis);
   const color = (i) => palette[i % palette.length];
   const line = (label, data, c, width) => ({ label, data, borderColor: c, backgroundColor: c, borderWidth: width, stepped: true,
     pointRadius: dot, pointHoverRadius: 6, pointHitRadius: 18, spanGaps: false });
   const datasets = [
-    ...(vis.has(BEST) ? [line(BEST, best, css("--ink"), 3)] : []),
+    ...(vis.has(IDEALO) && ide.length ? [{ ...line(IDEALO, ide, css("--muted"), 1.5), borderDash: [4, 3], pointRadius: 0 }] : []),
+    ...(vis.has(BEST) && best.length ? [line(BEST, best, css("--ink"), 3)] : []),
     ...shops.flatMap((shop, i) => {
       if (!vis.has(shop)) return [];
       const data = points.map((pt) => ({ x: Date.parse(pt.t), y: pt.s[shop] ?? null }));
       data.push({ x: endT, y: data.at(-1).y });
-      return [line(sellerOf(shop).name + (sellerOf(shop).note === "Vendeur partenaire" ? " (partenaire)" : ""), data, color(i), 1.6)];
+      return [line(shopLabel(shop), data, color(i), 1.6)];
     }),
   ];
   if (p.alertBelow) datasets.push({ label: "Ton plafond", data: [{ x: xMin, y: p.alertBelow }, { x: xMax, y: p.alertBelow }],
@@ -210,14 +228,15 @@ function drawChart(p) {
     <span class="dot" style="background:${dotColor}"></span>${esc(label)}${price ? ` <span class="muted">${eur(price)}</span>` : ""}</button>`;
   box.innerHTML = [
     ...[["top", "Top 3"], ["all", "Tous"], ["best", "Meilleur seul"]].map(([k, l]) => `<button type="button" class="chip chip-preset" data-preset="${k}">${l}</button>`),
-    chip(BEST, css("--ink"), best.at(-1).y),
-    ...shops.map((s, i) => chip(s, color(i), nowS[s], sellerOf(s).name + (/\(Marketplace\)/i.test(s) ? " · partenaire" : ""))),
+    ...(best.length ? [chip(BEST, css("--ink"), best.at(-1).y)] : []),
+    ...(ide.length ? [chip(IDEALO, css("--muted"), ide.at(-1).y)] : []),
+    ...shops.map((s, i) => chip(s, color(i), nowS[s], shopLabel(s))),
   ].join("");
   box.onclick = (e) => {
     const b = e.target.closest("button");
     if (!b) return;
     const k = b.dataset.preset;
-    if (k) shown.set(p.id, new Set([BEST, ...(k === "all" ? shops : k === "top" ? shops.slice(0, 3) : [])]));
+    if (k) shown.set(p.id, new Set([BEST, ...(k === "best" ? [] : [IDEALO]), ...(k === "all" ? shops : k === "top" ? shops.slice(0, 3) : [])]));
     else vis.has(b.dataset.name) ? vis.delete(b.dataset.name) : vis.add(b.dataset.name);
     drawChart(p);
   };
@@ -288,7 +307,7 @@ function viewOffers() {
   const select = `<label class="field"><span>Magasin</span>
     <select id="shop">
       <option value="">Tous les magasins (${byShop.size})</option>
-      ${[...byShop].map(([s, price]) => `<option value="${esc(s)}"${s === shop ? " selected" : ""}>${esc(sellerOf(s).name)}${/\(Marketplace\)/i.test(s) ? " · partenaire" : ""} — ${eur(price)}</option>`).join("")}
+      ${[...byShop].map(([s, price]) => `<option value="${esc(s)}"${s === shop ? " selected" : ""}>${esc(shopLabel(s))} — ${eur(price)}</option>`).join("")}
     </select></label>`;
   const exact = shop ? `<div class="exact">
       ${priceTag(byShop.get(shop), true)}
@@ -299,7 +318,7 @@ function viewOffers() {
     const inner = `
       <span class="o-head"><span class="o-shop">${esc(s.name)}</span>${!shop && i === 0 ? `<span class="pill pill-buy">Le moins cher</span>` : ""}</span>
       <span class="o-seller muted">${s.note}</span>
-      <span class="o-specs">${["Neuf", ...specs(o.title)].map((x) => `<span>${esc(x)}</span>`).join("")}</span>
+      <span class="o-specs">${[o.cond === "reconditionné" ? "Reconditionné comme neuf" : "Neuf", ...specs(o.title)].map((x) => `<span>${esc(x)}</span>`).join("")}</span>
       <span class="o-title">${esc(o.title)}</span>
       <span class="o-buy"><span class="o-price">${eurC(o.price)}</span>${o.url ? `<span class="o-go">Voir l'offre<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 17L17 7M9 7h8v8"/></svg></span>` : ""}</span>`;
     return `<li>${o.url ? `<a class="offer" href="${esc(o.url)}" target="_blank" rel="noopener nofollow">${inner}</a>` : `<div class="offer">${inner}</div>`}</li>`;
@@ -307,9 +326,9 @@ function viewOffers() {
   return `${modelSwitch("offres")}
     ${select}
     ${exact}
-    ${p.error && !offers.length ? `<p class="err">Dernière vérification échouée : ${esc(p.error)}</p>` : ""}
+    ${p.error ? `<p class="err">${esc(p.error)}${p.okAt ? `. Offres du ${dLong(new Date(p.okAt))}.` : ""}</p>` : ""}
     <ul class="offers">${rows || `<li class="muted">Aucune offre pour l'instant.</li>`}</ul>
-    <p class="note">Offres neuves des enseignes fiables, triées par prix. « Vendeur partenaire » = vendu par un vendeur tiers sur le site de l'enseigne, qui reste garante en cas de litige.</p>`;
+    <p class="note">Offres neuves et reconditionnées « comme neuf » des enseignes fiables, triées par prix. « Vendeur partenaire » = vendu par un vendeur tiers sur le site de l'enseigne, qui reste garante en cas de litige.</p>`;
 }
 
 // ---------- Tab: Soldes ----------
@@ -369,7 +388,7 @@ function render() {
 }
 
 if (latest) {
-  const t = Date.parse(latest.checkedAt);
+  const t = Date.parse(latest.okAt ?? latest.checkedAt);
   $("#checked").innerHTML = `Vérifié ${ago(t)}${now - t > 6 * 36e5 ? ` · <span class="bad-t">vérifications en retard</span>` : ""}`;
   $("#checked").title = dLong(new Date(t));
 }

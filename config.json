@@ -1,7 +1,9 @@
 {
   "dealThresholdPct": 7,
   "onlyShops": "^(Amazon\\.fr|Fnac\\.com|Darty\\.com|Boulanger(\\.com)?|Cdiscount\\.com|Rakuten.*|Xiaomi FR|Samsung.*|Google.*|OnePlus.*|Nothing.*|e\\.leclerc.*|Carrefour.*|Auchan.*|LDLC.*|Materiel\\.net|Rue du Commerce|Back ?Market.*|Ubaldi.*|Electro D[ée]p[ôo]t.*|Orange|Bouygues.*|SFR.*|Free.*|Coolblue.*|galaxus\\.fr|alternate\\.fr)( \\(Marketplace\\))?$",
-  "excludeTitles": "reconditionn|occasion|refurb|seconde main|coque|housse|étui|verre trempé|protection écran",
+  "excludeTitles": "coque|housse|étui|verre trempé|protection écran|chargeur seul",
+  "usedWords": "reconditionn|occasion|refurb|seconde main|d.occasion",
+  "refurbOk": "comme neuf|parfait|excellent|premium|grade a\\b|état neuf",
   "products": [
     { "id": "xiaomi-17t", "name": "Xiaomi 17T", "url": "https://www.idealo.fr/prix/210584711/xiaomi-17t.html", "include": "17\\s?T(?!\\s?Pro)", "alertBelow": 465 },
     { "id": "xiaomi-15t", "name": "Xiaomi 15T", "url": "https://www.idealo.fr/prix/207831193/xiaomi-15t.html", "include": "15\\s?T(?!\\s?Pro)", "alertBelow": 410 },

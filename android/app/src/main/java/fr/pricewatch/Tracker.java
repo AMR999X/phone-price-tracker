@@ -46,6 +46,7 @@ final class Tracker {
     static final class Offer {
         final String shop, title, url;
         final double price;
+        boolean refurb;
         Offer(String shop, double price, String title, String url) { this.shop = shop; this.price = price; this.title = title; this.url = url; }
     }
 
@@ -143,25 +144,51 @@ final class Tracker {
     }
 
     // ---------- Run (keep in sync with scripts/scrape.mjs) ----------
-    private static String fetch(String url) throws IOException {
+    private static final String HTML = "text/html,application/xhtml+xml,*/*;q=0.8", JSON = "application/json, text/plain, */*";
+
+    /** Same headers a browser sends from the product page; idealo answers 404/403 without the referer. */
+    private static String fetch(String url, String referer, String accept, int tries) throws IOException {
         IOException last = null;
-        for (int attempt = 1; attempt <= 3; attempt++) {
+        for (int attempt = 1; attempt <= tries; attempt++) {
             try {
                 HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
                 c.setConnectTimeout(30000); c.setReadTimeout(30000);
                 c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0 Mobile Safari/537.36");
                 c.setRequestProperty("Accept-Language", "fr-FR,fr;q=0.9");
-                c.setRequestProperty("Accept", "text/html,application/xhtml+xml");
+                c.setRequestProperty("Accept", accept);
+                if (referer != null) {
+                    c.setRequestProperty("Referer", referer);
+                    c.setRequestProperty("Sec-Fetch-Site", "same-origin");
+                    c.setRequestProperty("Sec-Fetch-Mode", "cors");
+                    c.setRequestProperty("Sec-Fetch-Dest", "empty");
+                }
                 try {
-                    if (c.getResponseCode() != 200) throw new IOException("HTTP " + c.getResponseCode());
+                    int code = c.getResponseCode();
+                    if (code == 403) throw new IOException("idealo a refusé la requête (HTTP 403)");
+                    if (code != 200) throw new IOException("HTTP " + code);
                     try (InputStream in = c.getInputStream()) { return readAll(in); }
                 } finally { c.disconnect(); }
+            } catch (java.net.UnknownHostException e) {
+                last = new IOException("Pas de connexion internet pendant la vérification");
             } catch (IOException e) {
                 last = e;
-                if (attempt < 3) try { Thread.sleep(5000L * attempt); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); throw e; }
             }
+            if (attempt < tries) sleep(5000L * attempt);
         }
         throw last;
+    }
+
+    private static void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
+    /** Spread requests out: bursts get 403s. */
+    private static void pause() { sleep(1500 + (long) (Math.random() * 2500)); }
+
+    static String idealoId(String url) { Matcher m = Pattern.compile("/prix/(\\d+)/").matcher(url); return m.find() ? m.group(1) : null; }
+
+    private static String listUrl(String id, int start, boolean used) {
+        return "https://www.idealo.fr/offerpage/offerlist/product/" + id + "/start/" + start + "/sort/default" + (used ? "?includeFilters=2" : "");
     }
 
     static String readAll(InputStream in) throws IOException {
@@ -188,7 +215,7 @@ final class Tracker {
 
     private static JSONObject loadConfig(Context c) throws IOException, JSONException {
         try {
-            JSONObject cfg = new JSONObject(fetch(CONFIG_URL));
+            JSONObject cfg = new JSONObject(fetch(CONFIG_URL, null, JSON, 3));
             writeJson(c, "config.json", cfg);
             return cfg;
         } catch (IOException | JSONException e) {
@@ -199,8 +226,12 @@ final class Tracker {
         }
     }
 
+    /** History key suffix, so a shop's refurbished price doesn't overwrite its new one. */
+    static final String REFURB = " (Reconditionné)";
+
     static boolean shopOk(String shop, Pattern exShops, Pattern onlyShops) {
-        return (exShops == null || !exShops.matcher(shop).find()) && (onlyShops == null || onlyShops.matcher(shop).find());
+        String s = shop.replace(REFURB, "");
+        return (exShops == null || !exShops.matcher(s).find()) && (onlyShops == null || onlyShops.matcher(s).find());
     }
 
     /** Drop history of shops now filtered out and of products removed from config.json, so charts and "usual" match. */
@@ -219,6 +250,21 @@ final class Tracker {
         }
     }
 
+    /** The APK ships idealo's 1-year history from public/data; copy it in where the phone's own copy is missing or older. */
+    private static void mergeBundledIdealo(Context c, JSONObject hp) {
+        try (InputStream in = c.getAssets().open("data/history.json")) {
+            JSONObject bundled = new JSONObject(readAll(in)).getJSONObject("products");
+            for (String id : toList(hp.keys())) {
+                JSONObject b = bundled.optJSONObject(id) == null ? null : bundled.getJSONObject(id).optJSONObject("idealo");
+                JSONObject mine = hp.getJSONObject(id).optJSONObject("idealo");
+                if (b != null && (mine == null || mine.optString("fetchedAt").compareTo(b.optString("fetchedAt")) < 0))
+                    hp.getJSONObject(id).put("idealo", b);
+            }
+        } catch (IOException | JSONException e) {
+            Log.w(TAG, "no bundled idealo history: " + e.getMessage());
+        }
+    }
+
     private static List<String> toList(Iterator<String> it) { List<String> l = new ArrayList<>(); it.forEachRemaining(l::add); return l; }
 
     private static String str(JSONObject o, String k) throws JSONException { return o.isNull(k) ? null : o.getString(k); }
@@ -230,45 +276,87 @@ final class Tracker {
             JSONObject cfg = loadConfig(c);
             JSONObject history = readJson(c, "history.json", "{\"products\":{}}");
             JSONObject alertState = readJson(c, "alert-state.json", "{}");
+            JSONObject prev = readJson(c, "latest.json", "{\"products\":[]}");
             String now = Instant.now().toString();
             double dealPct = cfg.optDouble("dealThresholdPct", 7);
             Pattern exShops = re(str(cfg, "excludeShops")), exTitles = re(str(cfg, "excludeTitles")), onlyShops = re(str(cfg, "onlyShops"));
+            Pattern usedWords = re(str(cfg, "usedWords")), refurbOk = re(str(cfg, "refurbOk"));
             JSONArray latestProducts = new JSONArray();
+            Object okAt = prev.opt("okAt") != null ? prev.opt("okAt") : JSONObject.NULL;
+            int historyBudget = 3; // idealo rate-limits its history endpoint: a few per run, the rest fill in over the next hours
             NotificationManager nm = c.getSystemService(NotificationManager.class);
             nm.createNotificationChannel(new NotificationChannel("alerts", "Alertes de prix", NotificationManager.IMPORTANCE_HIGH));
 
             JSONArray products = cfg.getJSONArray("products");
             pruneHistory(history.getJSONObject("products"), products, exShops, onlyShops);
+            mergeBundledIdealo(c, history.getJSONObject("products"));
             for (int i = 0; i < products.length(); i++) {
                 JSONObject p = products.getJSONObject(i);
                 String id = p.getString("id"), name = p.getString("name");
                 Double cap = p.isNull("alertBelow") || !p.has("alertBelow") ? null : p.getDouble("alertBelow");
                 JSONObject meta = new JSONObject().put("id", id).put("name", name).put("url", p.getString("url"))
                     .put("alertBelow", cap == null ? JSONObject.NULL : cap);
+                JSONObject hp = history.getJSONObject("products").optJSONObject(id);
+                if (hp == null) { hp = new JSONObject().put("points", new JSONArray()); history.getJSONObject("products").put(id, hp); }
                 try {
+                    String pid = idealoId(p.getString("url")), ref = p.getString("url");
+                    if (pid == null) throw new IOException("adresse idealo invalide dans config.json");
                     Pattern include = re(p.has("include") ? str(p, "include") : null);
+
+                    List<Offer> raw = new ArrayList<>();
+                    for (int start = 0; start <= 20; start += 20) {
+                        List<Offer> page = parseOffers(fetch(listUrl(pid, start, false), ref, HTML, 3));
+                        raw.addAll(page);
+                        pause();
+                        if (page.size() < 20) break;
+                    }
+                    for (Offer o : parseOffers(fetch(listUrl(pid, 0, true), ref, HTML, 3))) { o.refurb = true; raw.add(o); }
+                    pause();
+
+                    java.util.Set<String> seen = new java.util.HashSet<>();
                     List<Offer> offers = new ArrayList<>();
-                    for (Offer o : parseOffers(fetch(p.getString("url")))) {
+                    for (Offer o : raw) {
+                        if (!seen.add(o.url != null ? o.url : o.title + o.price)) continue;
                         if (!shopOk(o.shop, exShops, onlyShops)) continue;
                         if (exTitles != null && exTitles.matcher(o.title).find()) continue;
                         if (include != null && !include.matcher(o.title).find()) continue;
+                        // new list: no used/refurb wording; refurbished list: only perfect grades
+                        if (!o.refurb && usedWords != null && usedWords.matcher(o.title).find()) continue;
+                        if (o.refurb && (refurbOk == null || !refurbOk.matcher(o.title).find())) continue;
                         offers.add(o);
                     }
                     offers.sort((x, y) -> Double.compare(x.price, y.price));
-                    if (offers.isEmpty()) throw new IOException("no matching offers (page layout changed, or `include` filter too strict)");
+                    if (offers.isEmpty()) throw new IOException("aucune offre correspondante (page idealo modifiée, ou filtre `include` trop strict)");
 
                     JSONObject snapshot = new JSONObject();
-                    for (Offer o : offers) if (!snapshot.has(o.shop)) snapshot.put(o.shop, o.price); // sorted: first = cheapest per shop
-                    JSONObject hp = history.getJSONObject("products").optJSONObject(id);
-                    if (hp == null) { hp = new JSONObject().put("points", new JSONArray()); history.getJSONObject("products").put(id, hp); }
+                    for (Offer o : offers) { String k = o.shop + (o.refurb ? REFURB : ""); if (!snapshot.has(k)) snapshot.put(k, o.price); } // sorted: first = cheapest
                     JSONArray points = hp.getJSONArray("points");
                     if (points.length() == 0 || !sameSnapshot(points.getJSONObject(points.length() - 1).getJSONObject("s"), snapshot))
                         points.put(new JSONObject().put("t", now).put("s", snapshot));
 
+                    // idealo's own daily best price over a year (all sellers, not just trusted ones), refreshed once a day.
+                    JSONObject ih = hp.optJSONObject("idealo");
+                    if (historyBudget > 0 && (ih == null || System.currentTimeMillis() - Instant.parse(ih.getString("fetchedAt")).toEpochMilli() > 20 * 3_600_000L)) {
+                        historyBudget--;
+                        try {
+                            JSONArray data = new JSONObject(fetch("https://www.idealo.fr/price-chart/sites/4/products/" + pid + "/history?period=1Y", ref, JSON, 1)).getJSONArray("data");
+                            JSONArray pts = new JSONArray();
+                            for (int k = 0; k < data.length(); k++)
+                                pts.put(new JSONArray().put(data.getJSONObject(k).getString("x")).put(data.getJSONObject(k).getDouble("y") / 100));
+                            hp.put("idealo", new JSONObject().put("fetchedAt", now).put("points", pts));
+                            pause();
+                        } catch (IOException | JSONException e) {
+                            historyBudget = 0;
+                            Log.w(TAG, name + ": idealo history refused (" + e.getMessage() + "), retrying next run");
+                        }
+                    }
+
                     JSONArray top = new JSONArray();
-                    for (Offer o : offers.subList(0, Math.min(20, offers.size())))
-                        top.put(new JSONObject().put("shop", o.shop).put("price", o.price).put("title", o.title).put("url", o.url == null ? JSONObject.NULL : o.url));
-                    latestProducts.put(meta.put("offers", top));
+                    for (Offer o : offers.subList(0, Math.min(30, offers.size())))
+                        top.put(new JSONObject().put("shop", o.shop).put("price", o.price).put("title", o.title)
+                            .put("url", o.url == null ? JSONObject.NULL : o.url).put("cond", o.refurb ? "reconditionné" : "neuf"));
+                    latestProducts.put(meta.put("okAt", now).put("offers", top));
+                    okAt = now;
 
                     // Alert once per drop: re-alert only if it falls >1€ below the last alerted price; reset when the condition ends.
                     Analysis a = analyze(points, System.currentTimeMillis(), dealPct);
@@ -291,11 +379,18 @@ final class Tracker {
                     }
                 } catch (Exception e) {
                     Log.w(TAG, name + ": FAILED — " + e.getMessage());
-                    latestProducts.put(meta.put("error", e.getMessage()));
+                    // Keep the last good offers on screen, flagged with the error and when they were fetched.
+                    JSONObject old = null;
+                    JSONArray prevProducts = prev.optJSONArray("products");
+                    for (int k = 0; prevProducts != null && k < prevProducts.length(); k++)
+                        if (id.equals(prevProducts.getJSONObject(k).optString("id"))) old = prevProducts.getJSONObject(k);
+                    latestProducts.put(meta.put("error", String.valueOf(e.getMessage()))
+                        .put("okAt", old != null ? old.opt("okAt") : JSONObject.NULL)
+                        .put("offers", old != null && old.optJSONArray("offers") != null ? old.getJSONArray("offers") : new JSONArray()));
                 }
             }
             writeJson(c, "history.json", history);
-            writeJson(c, "latest.json", new JSONObject().put("checkedAt", now).put("dealThresholdPct", dealPct).put("products", latestProducts));
+            writeJson(c, "latest.json", new JSONObject().put("checkedAt", now).put("okAt", okAt).put("dealThresholdPct", dealPct).put("products", latestProducts));
             writeJson(c, "alert-state.json", alertState);
         } catch (Throwable e) { // never let a bad page or full disk crash the app
             Log.e(TAG, "run failed", e);
